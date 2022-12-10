@@ -1,0 +1,108 @@
+import numpy as np
+
+x = np.array([0,0,1,0,2,-1])
+F = np.array([0,0,0,0,0,-13])
+
+#Partitioning the stiffness matrix
+def reorder_rows_columns(K,equation_numbers):
+    # construct the matrix Khat
+    y = equation_numbers - 1
+    Khat = K.copy()
+    for i in range(0,len(equation_numbers)):
+        Khat[i] = K[y[i]]
+        
+    Ktemp = Khat.copy()
+    for i in range(0,len(equation_numbers)):
+        for j in range(0,len(equation_numbers)):
+            Khat[i][j] = Ktemp[i][y[j]]
+    return Khat
+    
+    
+#Partitioning the stiffness matrix
+def partition_stiffness_matrix(K,equation_numbers,nk):
+    # construct the smaller matrices
+    k = reorder_rows_columns(K, equation_numbers)
+    Kff = k[nk:,nk:]
+    Kfp = k[nk:,0:nk]
+    Kpf = k[0:nk,nk:]
+    Kpp = k[0:nk,0:nk]
+    return  Kpp,Kpf,Kfp,Kff
+
+
+import scipy.linalg as la
+import matplotlib.pyplot as plt
+# Solving KU=P
+def fea_solve(Kpp,Kpf,Kfp,Kff,xp,Ff):
+    # do stuff here
+    temp = Ff - Kfp@xp
+    xf = la.solve(Kff, temp)
+    Fp = Kpp@xp + Kpf@xf
+    return xf,Fp
+    
+Kpp, Kpf, Kfp, Kff = partition_stiffness_matrix(K, equation_numbers, 3)
+
+xp = np.array([0, 0, 0],dtype = 'float') 
+Ff = np.array([0, 0, -10],dtype = 'float')
+xf, Fp = fea_solve(Kpp,Kpf,Kfp,Kff,xp,Ff)
+image_xf = plot_truss(xf)
+
+#LU and Triangular Solve
+def my_lu(A):
+    # The upper triangular matrix U is saved in the upper part of the matrix M (including the diagonal)
+    # The lower triangular matrix L is saved in the lower part of the matrix M (not including the diagonal)
+    # Do NOT use `scipy.linalg.lu`!
+    # You should not use pivoting
+
+    M = A.copy()
+    for i in range (0,A.shape[0]):
+        for j in range (i+1,A.shape[0]):
+            M[j, i] = M[j, i] / M[i, i]
+            for z in range (i+1,A.shape[0]):
+                M[j,z] -= M[i,z]*M[j,i]
+    return M
+
+
+def my_triangular_solve(M, b):
+    # A = LU (L and U are stored in M)
+    # A x = b (given A and b, find x)
+    # M is a 2D numpy array
+    # The upper triangular matrix U is stored in the upper part of the matrix M (including the diagonal)
+    # The lower triangular matrix L is stored in the lower part of the matrix M (not including the diagonal)
+    # b is a 1D numpy array
+    # x is a 1D numpy array
+    # Do not use `scipy.linalg.solve_triangular`
+
+    x = np.zeros(b.shape[0],float)
+    y = np.zeros(b.shape[0],float)
+    z = np.zeros((b.shape[0],b.shape[0]),float)
+    for i in range(b.shape[0]):
+        z[i, i] = 1
+        for j in range(i):
+            z[i,j] = M[i,j]
+    for i in range(b.shape[0]):
+        t = b[i]
+        for j in range(i):
+            t -= y[j] * z[i,j]
+        y[i] = t/z[i,i]
+    for i in range(b.shape[0]-1, -1, -1):
+        t = y[i]
+        for j in range(i, b.shape[0]):
+            t -= x[j] * M[i,j]
+        x[i] = t/M[i,i]
+    return x
+
+
+def fea_solve(Kpp, Kpf, Kfp, Kff, xp, Ff):
+    # Use my_lu and my_triangular_solve
+
+    xf = my_triangular_solve(my_lu(Kff), Ff - Kfp @ xp)
+    Fp = Kpp @ xp + Kpf @ xf
+    return xf, Fp
+    
+#Solve a Truss System
+x = np.matmul(Kfp,xp)
+y = my_lu(Kff)
+xf_1 = my_triangular_solve(y, Ff[:, 0] - x)
+xf_2 = my_triangular_solve(y, Ff[:, 1] - x)
+image_xf_1 = plot_truss(xf_1)
+image_xf_2 = plot_truss(xf_2)
